@@ -87,6 +87,11 @@ class WingmanBackground {
           }
           break;
 
+        case 'EXECUTE_SWIPE_IN_PAGE':
+          await this.executeSwipeInPage(message.direction, sender.tab?.id);
+          sendResponse({ success: true });
+          break;
+
         case MessageTypes.SWIPE_RIGHT:
           await this.handleSwipe('right', payload);
           sendResponse({ success: true });
@@ -270,6 +275,55 @@ class WingmanBackground {
       if ((prefs.likedProfiles.length + prefs.dislikedProfiles.length) % 10 === 0) {
         this.updatePreferenceAnalysis();
       }
+    }
+  }
+
+  async executeSwipeInPage(direction, tabId) {
+    if (!tabId) {
+      console.error('No tab ID for swipe execution');
+      return;
+    }
+
+    const voteCode = direction === 'right' ? 2 : (direction === 'left' ? 3 : 7);
+    const qaRole = direction === 'right' ? 'encounters-action-like' : 
+                  (direction === 'left' ? 'encounters-action-dislike' : 'encounters-action-superswipe');
+
+    console.log(`Executing swipe in page context: ${direction} (voteCode: ${voteCode})`);
+
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        world: 'MAIN',  // Execute in page context, not isolated world
+        func: (qaRole, voteCode, direction) => {
+          const btn = document.querySelector(`[data-qa-role="${qaRole}"]`);
+          if (!btn) {
+            console.log('❌ Button not found for:', direction);
+            return false;
+          }
+          
+          const fiberKey = Object.keys(btn).find(k => k.startsWith('__reactFiber'));
+          if (!fiberKey) {
+            console.log('❌ No React fiber found');
+            return false;
+          }
+          
+          let node = btn[fiberKey];
+          while (node) {
+            if (node.stateNode && typeof node.stateNode.voteUser === 'function') {
+              node.stateNode.voteUser(voteCode, 1);
+              console.log(`✅ ${direction.toUpperCase()} executed via voteUser(${voteCode}, 1)`);
+              return true;
+            }
+            node = node.return;
+          }
+          
+          console.log('❌ voteUser not found in fiber tree');
+          return false;
+        },
+        args: [qaRole, voteCode, direction]
+      });
+    } catch (error) {
+      console.error('Error executing swipe in page:', error);
     }
   }
 

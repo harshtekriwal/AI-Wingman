@@ -10,10 +10,10 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://*.bumble.com/*",
-    "https://bumble.com/*",
-    "https://*.tinder.com/*",
-    "https://tinder.com/*"
+    "*://*.bumble.com/*",
+    "*://bumble.com/*",
+    "*://*.tinder.com/*",
+    "*://tinder.com/*"
   ],
   "action": {
     "default_popup": "popup/popup.html",

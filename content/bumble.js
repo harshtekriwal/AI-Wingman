@@ -2,60 +2,6 @@
 (function() {
   'use strict';
 
-  // Inject swipe function into page context (to access React internals)
-  function injectSwipeFunction() {
-    const script = document.createElement('script');
-    script.textContent = `
-      (function() {
-        function executeSwipe(direction) {
-          const voteCode = direction === 'right' ? 2 : (direction === 'left' ? 3 : 7);
-          const qaRole = direction === 'right' ? 'encounters-action-like' : 
-                        (direction === 'left' ? 'encounters-action-dislike' : 'encounters-action-superswipe');
-          
-          const btn = document.querySelector('[data-qa-role="' + qaRole + '"]');
-          if (!btn) {
-            console.log('❌ Button not found for:', direction);
-            return false;
-          }
-          
-          const fiberKey = Object.keys(btn).find(k => k.startsWith('__reactFiber'));
-          if (!fiberKey) {
-            console.log('❌ No React fiber found');
-            return false;
-          }
-          
-          let node = btn[fiberKey];
-          while (node) {
-            if (node.stateNode && typeof node.stateNode.voteUser === 'function') {
-              node.stateNode.voteUser(voteCode, 1);
-              console.log('✅ ' + direction.toUpperCase() + ' executed via voteUser(' + voteCode + ', 1)');
-              return true;
-            }
-            node = node.return;
-          }
-          console.log('❌ voteUser not found in fiber tree');
-          return false;
-        }
-        
-        // Listen for swipe events from content script
-        document.addEventListener('wingman-swipe', function(e) {
-          console.log('🎯 Received swipe event:', e.detail.direction);
-          executeSwipe(e.detail.direction);
-        });
-        
-        // Also expose globally for testing
-        window.__wingmanSwipe = executeSwipe;
-        
-        console.log('💘 AI Wingman swipe function injected and listening');
-      })();
-    `;
-    document.documentElement.appendChild(script);
-    script.remove();
-  }
-  
-  // Inject immediately
-  injectSwipeFunction();
-
   const SELECTORS = {
     // REAL Bumble selectors from inspecting the page
     profileCard: '[data-qa-role="encounters-user"], .encounters-user, [class*="encounters-user"]',
@@ -543,12 +489,11 @@
       // Visual feedback
       this.showSwipeFeedback(direction, confidence);
 
-      // Call the injected swipe function in page context
-      // We need to use a custom event to communicate with the injected script
-      const swipeEvent = new CustomEvent('wingman-swipe', { 
-        detail: { direction: direction }
+      // Ask background script to execute swipe in page context
+      chrome.runtime.sendMessage({
+        type: 'EXECUTE_SWIPE_IN_PAGE',
+        direction: direction
       });
-      document.dispatchEvent(swipeEvent);
     }
 
     simulateKeyPress(direction) {
