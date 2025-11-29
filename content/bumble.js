@@ -495,22 +495,47 @@
       // Find React component and call voteUser directly
       const qaRole = direction === 'right' ? 'encounters-action-like' : 
                     (direction === 'left' ? 'encounters-action-dislike' : 'encounters-action-superswipe');
+      
+      console.log('Looking for button with qa-role:', qaRole);
       const btn = document.querySelector(`[data-qa-role="${qaRole}"]`);
       
-      if (btn) {
+      if (!btn) {
+        console.log('✗ Button not found for:', direction);
+        return;
+      }
+      
+      console.log('✓ Found button:', btn);
+      
+      try {
         const fiberKey = Object.keys(btn).find(k => k.startsWith('__reactFiber'));
-        let node = btn[fiberKey];
+        console.log('Fiber key:', fiberKey);
         
-        while (node) {
+        if (!fiberKey) {
+          console.log('✗ No React fiber found on button');
+          return;
+        }
+        
+        let node = btn[fiberKey];
+        let found = false;
+        let depth = 0;
+        
+        while (node && depth < 50) {
+          depth++;
           if (node.stateNode && typeof node.stateNode.voteUser === 'function') {
+            console.log('✓ Found voteUser at depth:', depth);
             node.stateNode.voteUser(voteCode, 1);
             console.log(`✅ ${direction.toUpperCase()} executed with voteUser(${voteCode}, 1)`);
+            found = true;
             break;
           }
           node = node.return;
         }
-      } else {
-        console.log('✗ Button not found for:', direction);
+        
+        if (!found) {
+          console.log('✗ voteUser not found after traversing', depth, 'nodes');
+        }
+      } catch (error) {
+        console.error('Error executing swipe:', error);
       }
     }
 
