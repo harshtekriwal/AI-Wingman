@@ -489,61 +489,28 @@
       // Visual feedback
       this.showSwipeFeedback(direction, confidence);
 
-      // Find button by multiple methods
-      const buttonText = direction === 'right' ? 'Like' : (direction === 'left' ? 'Pass' : 'Super');
-      let button = null;
-
-      // Method 1: Find by text content
-      const allButtons = document.querySelectorAll('button');
-      for (const btn of allButtons) {
-        const text = btn.textContent.trim();
-        if (text === buttonText || text.includes(buttonText)) {
-          // Make sure it's not our overlay button
-          if (!btn.closest('#wingman-overlay')) {
-            button = btn;
-            console.log('✓ Found button by text:', buttonText);
+      // Vote codes: Like=2, Pass=3, SuperLike=7
+      const voteCode = direction === 'right' ? 2 : (direction === 'left' ? 3 : 7);
+      
+      // Find React component and call voteUser directly
+      const qaRole = direction === 'right' ? 'encounters-action-like' : 
+                    (direction === 'left' ? 'encounters-action-dislike' : 'encounters-action-superswipe');
+      const btn = document.querySelector(`[data-qa-role="${qaRole}"]`);
+      
+      if (btn) {
+        const fiberKey = Object.keys(btn).find(k => k.startsWith('__reactFiber'));
+        let node = btn[fiberKey];
+        
+        while (node) {
+          if (node.stateNode && typeof node.stateNode.voteUser === 'function') {
+            node.stateNode.voteUser(voteCode, 1);
+            console.log(`✅ ${direction.toUpperCase()} executed with voteUser(${voteCode}, 1)`);
             break;
           }
-        }
-      }
-
-      // Method 2: Find by data-qa-role
-      if (!button) {
-        const qaRole = direction === 'right' ? 'encounters-action-like' : 
-                      (direction === 'left' ? 'encounters-action-dislike' : 'encounters-action-superswipe');
-        button = document.querySelector(`[data-qa-role="${qaRole}"]`);
-        if (button) console.log('✓ Found button by data-qa-role:', qaRole);
-      }
-
-      // Method 3: Find by aria-label
-      if (!button) {
-        button = document.querySelector(`button[aria-label="${buttonText}"]`);
-        if (button) console.log('✓ Found button by aria-label:', buttonText);
-      }
-
-      if (button) {
-        console.log('Clicking button:', button);
-        
-        // Try multiple click methods
-        try {
-          // Method A: Direct click
-          button.click();
-          
-          // Method B: Simulate mouse events
-          const rect = button.getBoundingClientRect();
-          const x = rect.left + rect.width / 2;
-          const y = rect.top + rect.height / 2;
-          
-          button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: y }));
-          button.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: x, clientY: y }));
-          button.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
-          
-          console.log('✓ All click methods executed!');
-        } catch (e) {
-          console.error('Click error:', e);
+          node = node.return;
         }
       } else {
-        console.log('✗ No button found for:', direction);
+        console.log('✗ Button not found for:', direction);
       }
     }
 
