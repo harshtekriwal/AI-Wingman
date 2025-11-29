@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Wingman</title>
+  <link rel="stylesheet" href="popup.css">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">💘</span>
+        <span class="logo-text">AI Wingman</span>
+      </div>
+      <div class="status-badge" id="statusBadge">
+        <span class="status-dot"></span>
+        <span class="status-text">Inactive</span>
+      </div>
+    </header>
+
+    <!-- Quick Stats -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-number" id="matchesCount">0</span>
+        <span class="stat-label">Matches</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-number" id="swipesCount">0</span>
+        <span class="stat-label">Swipes</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-number" id="chatsCount">0</span>
+        <span class="stat-label">Chats</span>
+      </div>
+    </section>
+
+    <!-- Main Controls -->
+    <section class="controls">
+      <div class="control-group">
+        <div class="control-header">
+          <span class="control-icon">🎯</span>
+          <span class="control-title">Auto-Swipe</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="autoSwipeToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="control-group">
+        <div class="control-header">
+          <span class="control-icon">💬</span>
+          <span class="control-title">AI Chat Assistant</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="chatAssistToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="control-group">
+        <div class="control-header">
+          <span class="control-icon">🧠</span>
+          <span class="control-title">Learn My Type</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="learnTypeToggle" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Preference Preview -->
+    <section class="preferences-preview">
+      <h3 class="section-title">Your Type (Learned)</h3>
+      <div class="tags-container" id="preferenceTags">
+        <span class="tag">Analyzing...</span>
+      </div>
+      <button class="btn btn-secondary" id="viewPreferencesBtn">View Full Profile</button>
+    </section>
+
+    <!-- Quick Actions -->
+    <section class="quick-actions">
+      <button class="btn btn-primary" id="openBumbleBtn">
+        <span>🐝</span> Open Bumble
+      </button>
+      <button class="btn btn-primary" id="openTinderBtn">
+        <span>🔥</span> Open Tinder
+      </button>
+    </section>
+
+    <!-- Settings Link -->
+    <footer class="footer">
+      <button class="link-btn" id="openSettingsBtn">
+        ⚙️ Advanced Settings
+      </button>
+      <button class="link-btn" id="trainStyleBtn">
+        ✍️ Train Chat Style
+      </button>
+    </footer>
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
+

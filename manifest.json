@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "AI Wingman - Dating Assistant",
+  "version": "1.0.0",
+  "description": "Your AI-powered dating assistant that learns your type, helps you swipe, and chats like you",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.bumble.com/*",
+    "https://bumble.com/*",
+    "https://*.tinder.com/*",
+    "https://tinder.com/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.svg",
+      "48": "icons/icon48.svg",
+      "128": "icons/icon128.svg"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.bumble.com/*", "https://bumble.com/*"],
+      "js": ["content/bumble.js"],
+      "css": ["content/overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.tinder.com/*", "https://tinder.com/*"],
+      "js": ["content/tinder.js"],
+      "css": ["content/overlay.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options/options.html",
+  "icons": {
+    "16": "icons/icon16.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*"],
+      "matches": ["https://*.bumble.com/*", "https://*.tinder.com/*"]
+    }
+  ]
+}
+

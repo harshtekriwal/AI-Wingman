@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Wingman - Settings</title>
+  <link rel="stylesheet" href="options.css">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <div class="sidebar-header">
+        <span class="logo">💘</span>
+        <h1>AI Wingman</h1>
+      </div>
+      <ul class="nav-menu">
+        <li class="nav-item active" data-section="api">
+          <span class="nav-icon">🔑</span>
+          <span>API Setup</span>
+        </li>
+        <li class="nav-item" data-section="preferences">
+          <span class="nav-icon">🎯</span>
+          <span>My Type</span>
+        </li>
+        <li class="nav-item" data-section="chat-training">
+          <span class="nav-icon">💬</span>
+          <span>Chat Style</span>
+        </li>
+        <li class="nav-item" data-section="auto-swipe">
+          <span class="nav-icon">👆</span>
+          <span>Auto-Swipe</span>
+        </li>
+        <li class="nav-item" data-section="stats">
+          <span class="nav-icon">📊</span>
+          <span>Statistics</span>
+        </li>
+        <li class="nav-item" data-section="backup">
+          <span class="nav-icon">💾</span>
+          <span>Backup</span>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      
+      <!-- API Setup Section -->
+      <section id="api" class="section active">
+        <h2>API Configuration</h2>
+        <p class="section-desc">Connect your OpenAI API key to enable AI features like profile analysis, preference learning, and chat assistance.</p>
+        
+        <div class="card">
+          <div class="form-group">
+            <label for="apiKey">OpenAI API Key</label>
+            <div class="input-group">
+              <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off">
+              <button class="btn-icon" id="toggleApiKey">👁️</button>
+            </div>
+            <p class="help-text">Your API key is stored locally and never shared. <a href="https://platform.openai.com/api-keys" target="_blank">Get your key here</a></p>
+          </div>
+          
+          <button class="btn btn-primary" id="saveApiKey">Save API Key</button>
+          <button class="btn btn-secondary" id="testApiKey">Test Connection</button>
+          
+          <div class="status-box" id="apiStatus"></div>
+        </div>
+
+        <div class="card">
+          <h3>Usage & Costs</h3>
+          <p>AI Wingman uses GPT-4o for image analysis and GPT-4o-mini for text analysis. Typical costs:</p>
+          <ul class="cost-list">
+            <li>Profile analysis: ~$0.01 per profile</li>
+            <li>Chat response: ~$0.005 per message</li>
+            <li>Preference learning: ~$0.02 per analysis</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Preferences Section -->
+      <section id="preferences" class="section">
+        <h2>My Type</h2>
+        <p class="section-desc">AI Wingman learns your preferences from your swipes. Here's what we've learned so far.</p>
+
+        <div class="card">
+          <h3>Learned Preferences</h3>
+          <div id="learnedTraits" class="tags-container">
+            <span class="tag placeholder">Start swiping to learn...</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Deal Breakers</h3>
+          <div id="dealBreakers" class="tags-container red">
+            <span class="tag placeholder">None detected yet</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Must Haves</h3>
+          <div id="mustHaves" class="tags-container green">
+            <span class="tag placeholder">None detected yet</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Manual Preferences</h3>
+          <div class="form-group">
+            <label>Age Range</label>
+            <div class="range-inputs">
+              <input type="number" id="ageMin" value="18" min="18" max="99">
+              <span>to</span>
+              <input type="number" id="ageMax" value="35" min="18" max="99">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Keywords to Look For</label>
+            <textarea id="keywords" placeholder="Enter keywords separated by commas (e.g., dog lover, hiking, travel)"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Keywords to Avoid</label>
+            <textarea id="avoidKeywords" placeholder="Enter keywords to avoid (e.g., smoker, crypto)"></textarea>
+          </div>
+
+          <button class="btn btn-primary" id="savePreferences">Save Preferences</button>
+        </div>
+
+        <div class="card">
+          <h3>Swipe History</h3>
+          <p>Profiles liked: <strong id="likedCount">0</strong> | Profiles passed: <strong id="passedCount">0</strong></p>
+          <button class="btn btn-secondary" id="reanalyzePreferences">Re-analyze Preferences</button>
+          <button class="btn btn-danger" id="clearHistory">Clear History</button>
+        </div>
+      </section>
+
+      <!-- Chat Training Section -->
+      <section id="chat-training" class="section">
+        <h2>Chat Style Training</h2>
+        <p class="section-desc">Train the AI to text like you by providing example messages.</p>
+
+        <div class="card">
+          <h3>Your Texting Style</h3>
+          <div id="chatStyleSummary" class="style-summary">
+            <div class="style-item">
+              <span class="style-label">Tone</span>
+              <span class="style-value" id="styleTone">Not analyzed yet</span>
+            </div>
+            <div class="style-item">
+              <span class="style-label">Emoji Usage</span>
+              <span class="style-value" id="styleEmoji">Not analyzed yet</span>
+            </div>
+            <div class="style-item">
+              <span class="style-label">Message Length</span>
+              <span class="style-value" id="styleLength">Not analyzed yet</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Add Sample Messages</h3>
+          <p>Paste messages you've sent before to help the AI learn your style.</p>
+          
+          <div class="form-group">
+            <textarea id="chatSamples" rows="6" placeholder="Paste some of your actual messages here...
+Example:
+hey what's up! saw you like hiking too
+haha yeah that trail was insane 😂
+we should definitely check out that new place sometime"></textarea>
+          </div>
+          
+          <button class="btn btn-primary" id="addSamples">Add Samples</button>
+          <button class="btn btn-secondary" id="analyzeSamples">Analyze My Style</button>
+        </div>
+
+        <div class="card">
+          <h3>Style Settings</h3>
+          
+          <div class="form-group">
+            <label>Preferred Tone</label>
+            <select id="toneSelect">
+              <option value="casual">Casual & Chill</option>
+              <option value="flirty">Flirty</option>
+              <option value="funny">Funny & Witty</option>
+              <option value="sincere">Sincere & Genuine</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Emoji Usage</label>
+            <select id="emojiSelect">
+              <option value="none">None</option>
+              <option value="minimal">Minimal</option>
+              <option value="moderate" selected>Moderate</option>
+              <option value="heavy">Heavy 🔥😂💀</option>
+            </select>
+          </div>
+
+          <button class="btn btn-primary" id="saveStyle">Save Style</button>
+        </div>
+
+        <div class="card">
+          <h3>Sample Count</h3>
+          <p>You have <strong id="sampleCount">0</strong> message samples stored.</p>
+          <button class="btn btn-danger" id="clearSamples">Clear All Samples</button>
+        </div>
+      </section>
+
+      <!-- Auto-Swipe Section -->
+      <section id="auto-swipe" class="section">
+        <h2>Auto-Swipe Settings</h2>
+        <p class="section-desc">Configure how the auto-swipe feature works.</p>
+
+        <div class="card">
+          <div class="form-group">
+            <label class="toggle-label">
+              <span>Enable Auto-Swipe</span>
+              <label class="toggle">
+                <input type="checkbox" id="autoSwipeEnabled">
+                <span class="toggle-slider"></span>
+              </label>
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label>Swipe Speed</label>
+            <select id="swipeSpeed">
+              <option value="slow">Slow (10-15 seconds)</option>
+              <option value="normal" selected>Normal (5-8 seconds)</option>
+              <option value="fast">Fast (2-4 seconds)</option>
+            </select>
+            <p class="help-text">Slower speeds look more natural and reduce risk of being flagged.</p>
+          </div>
+
+          <div class="form-group">
+            <label>Confidence Threshold</label>
+            <input type="range" id="confidenceThreshold" min="0" max="100" value="60">
+            <div class="range-labels">
+              <span>Swipe More (60%)</span>
+              <span>Be Picky (90%)</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="toggle-label">
+              <span>Only Verified Profiles</span>
+              <label class="toggle">
+                <input type="checkbox" id="verifiedOnly">
+                <span class="toggle-slider"></span>
+              </label>
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label>Daily Swipe Limit</label>
+            <input type="number" id="dailyLimit" value="100" min="10" max="500">
+            <p class="help-text">Set a limit to avoid hitting app restrictions.</p>
+          </div>
+
+          <button class="btn btn-primary" id="saveAutoSwipe">Save Settings</button>
+        </div>
+
+        <div class="card warning">
+          <h3>⚠️ Important Notice</h3>
+          <p>Auto-swiping may violate dating app terms of service. Use responsibly and at your own risk. We recommend keeping speeds slow and natural.</p>
+        </div>
+      </section>
+
+      <!-- Statistics Section -->
+      <section id="stats" class="section">
+        <h2>Statistics</h2>
+        <p class="section-desc">Your dating analytics at a glance.</p>
+
+        <div class="stats-grid">
+          <div class="stat-card large">
+            <span class="stat-number" id="totalSwipes">0</span>
+            <span class="stat-label">Total Swipes</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-number green" id="rightSwipes">0</span>
+            <span class="stat-label">Right Swipes</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-number red" id="leftSwipes">0</span>
+            <span class="stat-label">Left Swipes</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-number blue" id="superLikes">0</span>
+            <span class="stat-label">Super Likes</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-number" id="matchRate">0%</span>
+            <span class="stat-label">Right Swipe Rate</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-number" id="chatsStarted">0</span>
+            <span class="stat-label">Chats Opened</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <button class="btn btn-danger" id="resetStats">Reset All Statistics</button>
+        </div>
+      </section>
+
+      <!-- Backup Section -->
+      <section id="backup" class="section">
+        <h2>Backup & Restore</h2>
+        <p class="section-desc">Export your settings and learned preferences, or restore from a backup.</p>
+
+        <div class="card">
+          <h3>Export Data</h3>
+          <p>Download all your settings, preferences, and chat style data.</p>
+          <button class="btn btn-primary" id="exportData">📥 Export Data</button>
+        </div>
+
+        <div class="card">
+          <h3>Import Data</h3>
+          <p>Restore from a previous backup file.</p>
+          <input type="file" id="importFile" accept=".json" hidden>
+          <button class="btn btn-secondary" id="importData">📤 Import Data</button>
+        </div>
+
+        <div class="card danger">
+          <h3>⚠️ Danger Zone</h3>
+          <p>This will permanently delete all your data including preferences, chat style, and statistics.</p>
+          <button class="btn btn-danger" id="clearAllData">🗑️ Clear All Data</button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="options.js" type="module"></script>
+</body>
+</html>
+
