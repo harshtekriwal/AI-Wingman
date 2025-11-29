@@ -129,27 +129,44 @@
     }
 
     observeProfileChanges() {
+      this.lastProfileId = null;
+      
       // Watch for new profiles appearing
       const observer = new MutationObserver((mutations) => {
-        const profileCard = document.querySelector(SELECTORS.profileCard);
-        if (profileCard && !profileCard.dataset.wingmanAnalyzed) {
-          profileCard.dataset.wingmanAnalyzed = 'true';
-          this.onNewProfile(profileCard);
-        }
+        this.checkForNewProfile();
       });
 
       observer.observe(document.body, {
         childList: true,
-        subtree: true
+        subtree: true,
+        characterData: true
       });
 
       // Initial check
       setTimeout(() => {
-        const profileCard = document.querySelector(SELECTORS.profileCard);
-        if (profileCard) {
-          this.onNewProfile(profileCard);
-        }
+        this.checkForNewProfile();
       }, 1000);
+      
+      // Also check periodically in case observer misses changes
+      setInterval(() => {
+        this.checkForNewProfile();
+      }, 2000);
+    }
+    
+    checkForNewProfile() {
+      const profileCard = document.querySelector(SELECTORS.profileCard);
+      if (!profileCard) return;
+      
+      // Get current profile identifier (use user ID or name+age combo)
+      const userElement = document.querySelector('[data-qa-role="encounters-user"]');
+      const currentId = userElement?.textContent?.substring(0, 50) || '';
+      
+      // Only process if profile changed
+      if (currentId && currentId !== this.lastProfileId) {
+        console.log('🔄 New profile detected!');
+        this.lastProfileId = currentId;
+        this.onNewProfile(profileCard);
+      }
     }
 
     async onNewProfile(profileCard) {
