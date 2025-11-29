@@ -2,6 +2,60 @@
 (function() {
   'use strict';
 
+  // Inject swipe function into page context (to access React internals)
+  function injectSwipeFunction() {
+    const script = document.createElement('script');
+    script.textContent = `
+      (function() {
+        function executeSwipe(direction) {
+          const voteCode = direction === 'right' ? 2 : (direction === 'left' ? 3 : 7);
+          const qaRole = direction === 'right' ? 'encounters-action-like' : 
+                        (direction === 'left' ? 'encounters-action-dislike' : 'encounters-action-superswipe');
+          
+          const btn = document.querySelector('[data-qa-role="' + qaRole + '"]');
+          if (!btn) {
+            console.log('❌ Button not found for:', direction);
+            return false;
+          }
+          
+          const fiberKey = Object.keys(btn).find(k => k.startsWith('__reactFiber'));
+          if (!fiberKey) {
+            console.log('❌ No React fiber found');
+            return false;
+          }
+          
+          let node = btn[fiberKey];
+          while (node) {
+            if (node.stateNode && typeof node.stateNode.voteUser === 'function') {
+              node.stateNode.voteUser(voteCode, 1);
+              console.log('✅ ' + direction.toUpperCase() + ' executed via voteUser(' + voteCode + ', 1)');
+              return true;
+            }
+            node = node.return;
+          }
+          console.log('❌ voteUser not found in fiber tree');
+          return false;
+        }
+        
+        // Listen for swipe events from content script
+        document.addEventListener('wingman-swipe', function(e) {
+          console.log('🎯 Received swipe event:', e.detail.direction);
+          executeSwipe(e.detail.direction);
+        });
+        
+        // Also expose globally for testing
+        window.__wingmanSwipe = executeSwipe;
+        
+        console.log('💘 AI Wingman swipe function injected and listening');
+      })();
+    `;
+    document.documentElement.appendChild(script);
+    script.remove();
+  }
+  
+  // Inject immediately
+  injectSwipeFunction();
+
   const SELECTORS = {
     // REAL Bumble selectors from inspecting the page
     profileCard: '[data-qa-role="encounters-user"], .encounters-user, [class*="encounters-user"]',
@@ -489,54 +543,12 @@
       // Visual feedback
       this.showSwipeFeedback(direction, confidence);
 
-      // Vote codes: Like=2, Pass=3, SuperLike=7
-      const voteCode = direction === 'right' ? 2 : (direction === 'left' ? 3 : 7);
-      
-      // Find React component and call voteUser directly
-      const qaRole = direction === 'right' ? 'encounters-action-like' : 
-                    (direction === 'left' ? 'encounters-action-dislike' : 'encounters-action-superswipe');
-      
-      console.log('Looking for button with qa-role:', qaRole);
-      const btn = document.querySelector(`[data-qa-role="${qaRole}"]`);
-      
-      if (!btn) {
-        console.log('✗ Button not found for:', direction);
-        return;
-      }
-      
-      console.log('✓ Found button:', btn);
-      
-      try {
-        const fiberKey = Object.keys(btn).find(k => k.startsWith('__reactFiber'));
-        console.log('Fiber key:', fiberKey);
-        
-        if (!fiberKey) {
-          console.log('✗ No React fiber found on button');
-          return;
-        }
-        
-        let node = btn[fiberKey];
-        let found = false;
-        let depth = 0;
-        
-        while (node && depth < 50) {
-          depth++;
-          if (node.stateNode && typeof node.stateNode.voteUser === 'function') {
-            console.log('✓ Found voteUser at depth:', depth);
-            node.stateNode.voteUser(voteCode, 1);
-            console.log(`✅ ${direction.toUpperCase()} executed with voteUser(${voteCode}, 1)`);
-            found = true;
-            break;
-          }
-          node = node.return;
-        }
-        
-        if (!found) {
-          console.log('✗ voteUser not found after traversing', depth, 'nodes');
-        }
-      } catch (error) {
-        console.error('Error executing swipe:', error);
-      }
+      // Call the injected swipe function in page context
+      // We need to use a custom event to communicate with the injected script
+      const swipeEvent = new CustomEvent('wingman-swipe', { 
+        detail: { direction: direction }
+      });
+      document.dispatchEvent(swipeEvent);
     }
 
     simulateKeyPress(direction) {
