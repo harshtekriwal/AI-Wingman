@@ -200,27 +200,60 @@ export class AIService {
 
   // Generate opening line based on profile
   async generateOpener(profile, chatStyle) {
+    // Build a rich profile summary for the AI
+    let profileSummary = `Name: ${profile.name || 'Unknown'}`;
+    
+    if (profile.hasFullProfile) {
+      // We have rich data from API interception
+      if (profile.age) profileSummary += `\nAge: ${profile.age}`;
+      if (profile.bio) profileSummary += `\nBio: ${profile.bio}`;
+      if (profile.occupation) profileSummary += `\nJob: ${profile.occupation}`;
+      if (profile.education) profileSummary += `\nEducation: ${profile.education}`;
+      if (profile.location) profileSummary += `\nLocation: ${profile.location}`;
+      if (profile.topArtists?.length) profileSummary += `\nFavorite Artists: ${profile.topArtists.join(', ')}`;
+      if (profile.prompts?.length) {
+        profileSummary += `\nProfile Prompts:`;
+        profile.prompts.forEach(p => {
+          profileSummary += `\n  "${p.question}": "${p.answer}"`;
+        });
+      }
+      if (profile.lifestyle && Object.keys(profile.lifestyle).length) {
+        profileSummary += `\nLifestyle:`;
+        for (const [key, value] of Object.entries(profile.lifestyle)) {
+          profileSummary += `\n  ${key}: ${value}`;
+        }
+      }
+    }
+    
+    const hasRichData = profile.hasFullProfile && (profile.bio || profile.prompts?.length || profile.topArtists?.length);
+    
     const result = await this.request('/chat/completions', {
       model: 'gpt-4o',
       messages: [
         {
           role: 'system',
-          content: `Generate a creative, personalized opening message for a dating app. 
+          content: `Generate a creative, personalized opening message for a dating app.
           
           Style: ${chatStyle.tone || 'casual'}
           Emoji usage: ${chatStyle.emojiUsage || 'moderate'}
           
           Rules:
-          - Reference something specific from their profile
+          ${hasRichData ? 
+            `- Reference something SPECIFIC from their profile (bio, prompts, music taste, etc.)
+          - Pick the most interesting/unique thing to comment on` :
+            `- Since we only have their name, use a fun, engaging conversation starter
+          - Ask an interesting question to get to know them
+          - Do NOT pretend to know things about them that weren't provided`}
           - Be unique, not generic
           - Show genuine interest
           - Keep it short (1-2 sentences)
           - Don't use corny pickup lines
+          - Sound natural and human, not AI-generated
           - Return ONLY the message text`
         },
         {
           role: 'user',
-          content: `Their profile:\n${JSON.stringify(profile, null, 2)}`
+          content: profileSummary
         }
       ],
       max_tokens: 100

@@ -68,9 +68,48 @@
       this.createChatOverlay();
       this.loadSettings();
       this.setupMessageListener();
+      this.setupApiInterceptor();
       this.observeProfileChanges();
       this.observeViewChanges();
       this.detectCurrentView();
+    }
+
+    setupApiInterceptor() {
+      // Listen for messages from the injected script (via postMessage)
+      window.addEventListener('message', (event) => {
+        if (event.source !== window) return;
+        if (event.data?.type === 'WINGMAN_PROFILE_DATA') {
+          console.log('📡 Received profile data:', event.data.profile?.name);
+          this.handleInterceptedProfile(event.data.profile);
+        }
+      });
+
+      // Request background script to inject the API interceptor
+      console.log('📡 Requesting API interceptor injection...');
+      chrome.runtime.sendMessage({ type: 'INJECT_API_INTERCEPTOR' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('❌ Failed to request interceptor:', chrome.runtime.lastError);
+        } else {
+          console.log('✅ Interceptor injection requested:', response);
+        }
+      });
+    }
+
+    handleInterceptedProfile(profile) {
+      if (!profile) return;
+      
+      // Update current chat match with full profile data
+      if (this.currentChatMatch && this.currentChatMatch.name === profile.name) {
+        this.currentChatMatch = {
+          ...this.currentChatMatch,
+          ...profile,
+          hasFullProfile: true
+        };
+        console.log('📋 Updated match with full profile:', this.currentChatMatch);
+      } else {
+        // Store for when chat opens
+        this.pendingProfileData = profile;
+      }
     }
 
     createOverlay() {
@@ -1004,11 +1043,24 @@
         }
       }
 
-      this.currentChatMatch = {
-        name: matchName,
-        photo: matchPhoto,
-        timestamp: Date.now()
-      };
+      // Check if we have pending profile data from API interception
+      if (this.pendingProfileData && this.pendingProfileData.name === matchName) {
+        this.currentChatMatch = {
+          ...this.pendingProfileData,
+          photo: matchPhoto,
+          timestamp: Date.now(),
+          hasFullProfile: true
+        };
+        this.pendingProfileData = null;
+        console.log('✅ Using intercepted profile data for:', matchName);
+      } else {
+        this.currentChatMatch = {
+          name: matchName,
+          photo: matchPhoto,
+          timestamp: Date.now(),
+          hasFullProfile: false
+        };
+      }
 
       // Update UI
       const nameEl = document.getElementById('match-name');

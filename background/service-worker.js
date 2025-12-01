@@ -142,6 +142,12 @@ class WingmanBackground {
           sendResponse({ success: true });
           break;
 
+        case 'INJECT_API_INTERCEPTOR':
+          console.log('📡 Received INJECT_API_INTERCEPTOR request for tab:', sender.tab?.id);
+          await this.injectApiInterceptor(sender.tab?.id);
+          sendResponse({ success: true });
+          break;
+
         default:
           sendResponse({ success: false, error: 'Unknown message type' });
       }
@@ -369,6 +375,132 @@ class WingmanBackground {
       });
     } catch (error) {
       console.error('Error executing swipe in page:', error);
+    }
+  }
+
+  async injectApiInterceptor(tabId) {
+    if (!tabId) {
+      console.error('❌ No tab ID for API interceptor');
+      return;
+    }
+
+    console.log('🔌 Injecting API interceptor into tab:', tabId);
+
+    try {
+      const result = await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        world: 'MAIN',
+        func: () => {
+          try {
+            console.log('🚀 Wingman interceptor script starting...');
+            
+            // Don't inject twice
+            if (window.__wingmanInterceptorInstalled) {
+              console.log('🔌 Interceptor already installed');
+              return true;
+            }
+            window.__wingmanInterceptorInstalled = true;
+
+            // Helper to extract profile from response
+            function extractProfile(data) {
+              if (!data?.body?.[0]?.user) return null;
+              
+              const user = data.body[0].user;
+              const profile = {
+                name: user.name,
+                age: user.age,
+                bio: '',
+                occupation: '',
+                education: '',
+                location: '',
+                topArtists: [],
+                prompts: [],
+                lifestyle: {}
+              };
+              
+              if (user.profile_fields) {
+                for (const field of user.profile_fields) {
+                  if (field.id === 'aboutme_text') profile.bio = field.display_value;
+                  else if (field.id === 'work') profile.occupation = field.display_value;
+                  else if (field.id === 'education') profile.education = field.display_value;
+                  else if (field.id === 'location') profile.location = field.display_value;
+                  else if (field.type === 25) profile.lifestyle[field.name] = field.display_value;
+                  else if (field.type === 26) profile.prompts.push({ question: field.name, answer: field.display_value });
+                }
+              }
+              
+              if (user.music_services?.[0]?.top_artists) {
+                profile.topArtists = user.music_services[0].top_artists.map(a => a.name).slice(0, 5);
+              }
+              
+              return profile;
+            }
+
+            // Override XMLHttpRequest (Bumble uses this!)
+            const originalXHROpen = XMLHttpRequest.prototype.open;
+            const originalXHRSend = XMLHttpRequest.prototype.send;
+            
+            XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+              this._wingmanUrl = url;
+              return originalXHROpen.apply(this, [method, url, ...rest]);
+            };
+            
+            XMLHttpRequest.prototype.send = function(...args) {
+              if (this._wingmanUrl && this._wingmanUrl.includes('SERVER_GET_USER')) {
+                this.addEventListener('load', function() {
+                  try {
+                    console.log('🎯 XHR Intercepted SERVER_GET_USER!');
+                    const data = JSON.parse(this.responseText);
+                    const profile = extractProfile(data);
+                    if (profile) {
+                      console.log('📡 Posting profile:', profile.name, profile.bio?.substring(0, 50));
+                      window.postMessage({ type: 'WINGMAN_PROFILE_DATA', profile: profile }, '*');
+                    }
+                  } catch (e) {
+                    console.error('❌ XHR parse error:', e);
+                  }
+                });
+              }
+              return originalXHRSend.apply(this, args);
+            };
+
+            // Also override fetch just in case
+            const originalFetch = window.fetch;
+            window.fetch = async function(...args) {
+              const response = await originalFetch.apply(this, args);
+              
+              try {
+                const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+                
+                if (url && url.includes('SERVER_GET_USER')) {
+                  console.log('🎯 Fetch Intercepted SERVER_GET_USER!');
+                  const clone = response.clone();
+                  const data = await clone.json();
+                  const profile = extractProfile(data);
+                  if (profile) {
+                    console.log('📡 Posting profile:', profile.name, profile.bio?.substring(0, 50));
+                    window.postMessage({ type: 'WINGMAN_PROFILE_DATA', profile: profile }, '*');
+                  }
+                }
+              } catch (e) {
+                console.error('❌ Fetch error:', e);
+              }
+              
+              return response;
+            };
+          
+          // Visual confirmation
+          console.log('%c🔌 WINGMAN API INTERCEPTOR INSTALLED', 'background: green; color: white; font-size: 16px; padding: 5px;');
+          return true;
+          } catch (err) {
+            console.error('❌ Interceptor installation error:', err);
+            return false;
+          }
+        }
+      });
+      console.log('✅ API interceptor injection result:', result);
+    } catch (error) {
+      console.error('❌ Error injecting API interceptor:', error);
     }
   }
 
