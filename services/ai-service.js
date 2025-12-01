@@ -143,11 +143,22 @@ export class AIService {
   }
 
   // Generate a chat response in user's style
-  async generateChatResponse(conversation, chatStyle, matchProfile) {
+  async generateChatResponse(conversation, chatStyle, matchProfile, isFollowUp = false) {
     const styleSamples = chatStyle.samples
       ?.slice(-20)
       .map(s => s.text)
       .join('\n') || '';
+
+    const contextInstruction = isFollowUp
+      ? `The user sent the LAST message and hasn't gotten a reply yet. Generate a FOLLOW-UP message to:
+         - Re-engage the conversation
+         - Ask a question or share something interesting
+         - NOT repeat what was already said
+         - Keep it light and not desperate`
+      : `The match sent the last message. Generate a REPLY that:
+         - Responds to what they said
+         - Keeps the conversation flowing
+         - Shows genuine interest`;
 
     const result = await this.request('/chat/completions', {
       model: 'gpt-4o',
@@ -166,6 +177,8 @@ export class AIService {
           Match's profile info:
           ${matchProfile ? JSON.stringify(matchProfile) : 'Not available'}
           
+          CONTEXT: ${contextInstruction}
+          
           Rules:
           - Match their typing style (length, punctuation, emoji usage)
           - Be natural and conversational
@@ -176,7 +189,7 @@ export class AIService {
         },
         {
           role: 'user',
-          content: `Conversation so far:\n${conversation}\n\nGenerate my next response:`
+          content: `Conversation so far:\n${conversation}\n\nGenerate my next ${isFollowUp ? 'follow-up' : 'response'}:`
         }
       ],
       max_tokens: 150
@@ -286,4 +299,5 @@ export class AIService {
     }
   }
 }
+
 

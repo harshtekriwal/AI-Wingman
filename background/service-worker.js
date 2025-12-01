@@ -122,6 +122,26 @@ class WingmanBackground {
           sendResponse({ success: true });
           break;
 
+        case 'LEARN_CHAT_STYLE':
+          await this.learnChatStyle(payload);
+          sendResponse({ success: true });
+          break;
+
+        case 'GET_CHAT_STYLE':
+          const chatStyle = await this.storage.getChatStyle();
+          sendResponse({ success: true, chatStyle });
+          break;
+
+        case 'GET_SETTINGS':
+          const settings = await this.storage.getSettings();
+          sendResponse({ success: true, settings });
+          break;
+
+        case 'PASTE_TEXT':
+          await this.handlePasteText(message.text, sender.tab?.id);
+          sendResponse({ success: true });
+          break;
+
         default:
           sendResponse({ success: false, error: 'Unknown message type' });
       }
@@ -145,6 +165,12 @@ class WingmanBackground {
   async startAutoSwipe() {
     console.log('🎯 Auto-swipe started');
     this.notifyContentScript({ type: 'AUTO_SWIPE_STARTED' });
+    
+    // Trigger analysis of current profile
+    if (this.activeTabId) {
+      console.log('🔄 Requesting current profile analysis...');
+      chrome.tabs.sendMessage(this.activeTabId, { type: 'TRIGGER_PROFILE_CHECK' }).catch(() => {});
+    }
   }
 
   stopAutoSwipe() {
@@ -155,26 +181,45 @@ class WingmanBackground {
 
   async handleProfileDetected(profile, tabId) {
     const settings = await this.storage.getSettings();
+    console.log('📋 handleProfileDetected:', profile.name, 'autoSwipe:', settings.autoSwipe, 'isAutoSwiping:', this.isAutoSwiping);
     
     // If learning is enabled, we analyze the profile
     if (settings.learnType || settings.autoSwipe) {
       const analysis = await this.analyzeProfile(profile);
       
       if (settings.autoSwipe && this.isAutoSwiping) {
-        // Make swipe decision
-        const preferences = await this.storage.getLearnedPreferences();
-        const decision = await this.ai.shouldSwipeRight(
-          { ...profile, analysis },
-          preferences
-        );
+        console.log('🤖 Auto-swipe enabled, making decision...');
         
-        // Send swipe command to content script
-        if (tabId) {
-          chrome.tabs.sendMessage(tabId, {
-            type: 'EXECUTE_SWIPE',
-            direction: decision.decision,
-            confidence: decision.confidence
-          });
+        try {
+          // Make swipe decision
+          const preferences = await this.storage.getLearnedPreferences();
+          console.log('📊 Preferences:', preferences);
+          
+          const decision = await this.ai.shouldSwipeRight(
+            { ...profile, analysis },
+            preferences
+          );
+          console.log('🎯 AI Decision:', decision);
+          
+          // Send swipe command to content script
+          if (tabId && decision?.direction) {
+            console.log('📤 Sending EXECUTE_SWIPE:', decision.direction);
+            chrome.tabs.sendMessage(tabId, {
+              type: 'EXECUTE_SWIPE',
+              direction: decision.direction,
+              confidence: decision.confidence
+            });
+          } else if (tabId && decision?.decision) {
+            // Handle if AI returns 'decision' instead of 'direction'
+            console.log('📤 Sending EXECUTE_SWIPE:', decision.decision);
+            chrome.tabs.sendMessage(tabId, {
+              type: 'EXECUTE_SWIPE',
+              direction: decision.decision,
+              confidence: decision.confidence
+            });
+          }
+        } catch (error) {
+          console.error('❌ Auto-swipe error:', error);
         }
       }
     }
@@ -327,6 +372,51 @@ class WingmanBackground {
     }
   }
 
+  async handlePasteText(text, tabId) {
+    if (!tabId) {
+      console.error('No tab ID for paste');
+      return;
+    }
+
+    console.log('📝 Pasting text via execCommand:', text.substring(0, 50) + '...');
+
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        world: 'MAIN',
+        func: (textToPaste) => {
+          // Find the textarea
+          const input = document.querySelector('textarea.textarea__input') ||
+                       document.querySelector('.message-field textarea') ||
+                       document.querySelector('textarea[placeholder*="chatting"]');
+          
+          if (!input) {
+            console.log('❌ Textarea not found');
+            return false;
+          }
+
+          // Focus and select the input
+          input.focus();
+          input.select();
+
+          // Use execCommand which works with React inputs
+          const success = document.execCommand('insertText', false, textToPaste);
+          
+          if (success) {
+            console.log('✅ Text pasted via execCommand');
+          } else {
+            console.log('❌ execCommand failed');
+          }
+
+          return success;
+        },
+        args: [text]
+      });
+    } catch (error) {
+      console.error('Error pasting text:', error);
+    }
+  }
+
   async updatePreferenceAnalysis() {
     const prefs = await this.storage.getLearnedPreferences();
     
@@ -379,15 +469,68 @@ class WingmanBackground {
   async generateResponse(payload) {
     const chatStyle = await this.storage.getChatStyle();
     
-    if (payload.isOpener) {
-      return await this.ai.generateOpener(payload.profile, chatStyle);
+    // Check for API key
+    const apiKey = await this.storage.getApiKey();
+    if (!apiKey) {
+      throw new Error('Please add your OpenAI API key in settings');
     }
     
+    if (payload.isOpener) {
+      console.log('🎯 Generating opener for:', payload.match?.name);
+      return await this.ai.generateOpener(payload.match || payload.profile, chatStyle);
+    }
+    
+    const isFollowUp = payload.isFollowUp || payload.lastMessageFrom === 'me';
+    console.log('💭 Generating', isFollowUp ? 'FOLLOW-UP' : 'REPLY', '- conversation length:', payload.conversation?.length);
+    
+    // Format conversation for AI
+    const conversationText = payload.conversation
+      ?.map(m => `${m.sender === 'me' ? 'You' : payload.match?.name || 'Them'}: ${m.text}`)
+      .join('\n') || '';
+    
     return await this.ai.generateChatResponse(
-      payload.conversation,
+      conversationText,
       chatStyle,
-      payload.matchProfile
+      payload.match || payload.matchProfile,
+      isFollowUp // Pass the follow-up flag
     );
+  }
+
+  async learnChatStyle(payload) {
+    const { message } = payload;
+    
+    if (!message || message.length < 2) return;
+    
+    console.log('📝 Learning from message:', message.substring(0, 30));
+    
+    // Store the message sample
+    await this.storage.addChatSample(message);
+    
+    // Get current samples
+    const style = await this.storage.getChatStyle();
+    
+    // If we have enough samples, analyze the style
+    if (style.samples.length >= 10 && style.samples.length % 5 === 0) {
+      console.log('🔄 Analyzing chat style with', style.samples.length, 'samples');
+      
+      try {
+        const analysis = await this.ai.analyzeChatStyle(style.samples);
+        
+        if (analysis) {
+          await this.storage.updateChatStyle({
+            tone: analysis.tone || style.tone,
+            emojiUsage: analysis.emojiUsage || style.emojiUsage,
+            messageLength: analysis.messageLength,
+            patterns: analysis.patterns || [],
+            vocabulary: analysis.vocabulary || []
+          });
+          
+          console.log('✅ Chat style updated:', analysis.tone, analysis.emojiUsage);
+        }
+      } catch (error) {
+        console.error('Style analysis error:', error);
+      }
+    }
   }
 
   notifyContentScript(message) {

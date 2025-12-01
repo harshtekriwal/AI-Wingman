@@ -11,26 +11,35 @@
     
     // Action buttons - EXACT selectors from Bumble's accessibility tree
     likeButtons: [
-      'button[aria-label="Like"]',           // Exact match from accessibility tree
+      'button[aria-label="Like"]',
       '[data-qa-role="encounters-action-like"]',
       '.encounters-action--like'
     ],
     passButtons: [
-      'button[aria-label="Pass"]',           // Exact match from accessibility tree  
+      'button[aria-label="Pass"]',
       '[data-qa-role="encounters-action-dislike"]',
       '.encounters-action--dislike'
     ],
     superLikeButtons: [
-      'button[aria-label="Super"]',          // Exact match
+      'button[aria-label="Super"]',
       'button[aria-label*="Super"]',
       '[data-qa-role="encounters-action-superswipe"]'
     ],
     
-    // Chat elements
-    chatContainer: '[class*="chat"], [class*="conversation"]',
-    messageInput: '[class*="messenger-field"], textarea, [contenteditable="true"]',
-    messages: '[class*="message__content"], [class*="message-text"]',
-    matchInfo: '[class*="chat-header"], [class*="match-header"]'
+    // Chat elements - ACTUAL Bumble selectors from inspection
+    chatContainer: '.page--chat, [class*="messenger"], [class*="chat-room"]',
+    chatHeader: '.messages-header, .messages-header__inner',
+    messageInput: '.message-field textarea, textarea[placeholder*="Start chatting"], textarea[placeholder*="message"]',
+    messageInputWrapper: '.message-field',
+    sendButton: '.message-field button[type="submit"], .message-field .send-button',
+    messagesList: '.messages-list',
+    messageItem: '.message, [class*="message-item"]',
+    myMessage: '.message--out, .message--mine, [class*="from-me"]',
+    theirMessage: '.message--in, .message--theirs, [class*="from-them"]',
+    messageText: '.message__text, .message-text, [class*="message__content"]',
+    matchName: '.messages-header__name .header-2, .messages-header__name',
+    matchPhoto: '.messages-header__avatar img, .messages-header__avatar',
+    typingIndicator: '[class*="typing"]'
   };
 
   class BumbleWingman {
@@ -38,15 +47,30 @@
       this.isAutoSwiping = false;
       this.settings = {};
       this.overlay = null;
+      this.chatOverlay = null;
+      this.currentView = 'swipe'; // 'swipe' or 'chat'
+      this.viewInitialized = false;
+      this.currentChatMatch = null;
+      this.conversationHistory = [];
+      this.isGeneratingResponse = false;
+      this.switchingConversation = false;
+      this.lastMessageCount = 0;
+      this.chatObserver = null;
+      this.conversationSwitchObserver = null;
+      this.conversationSwitchInterval = null;
+      this.lastMatchName = '';
       this.init();
     }
 
     init() {
       console.log('💘 AI Wingman loaded on Bumble');
       this.createOverlay();
+      this.createChatOverlay();
       this.loadSettings();
       this.setupMessageListener();
       this.observeProfileChanges();
+      this.observeViewChanges();
+      this.detectCurrentView();
     }
 
     createOverlay() {
@@ -116,6 +140,12 @@
             break;
           case 'EXECUTE_SWIPE':
             this.executeSwipe(message.direction, message.confidence);
+            break;
+          case 'TRIGGER_PROFILE_CHECK':
+            // Force re-check of current profile for auto-swipe
+            console.log('🔄 Triggered profile check for auto-swipe');
+            this.lastProfileId = null; // Reset to force re-detection
+            this.checkForNewProfile();
             break;
           case 'CHAT_ASSIST_CHANGED':
             this.settings.chatAssist = message.enabled;
@@ -676,28 +706,918 @@
       `;
     }
 
-    // Chat monitoring
-    setupChatObserver() {
-      const chatObserver = new MutationObserver((mutations) => {
-        if (this.settings.chatAssist) {
-          this.onChatUpdate();
-        }
+    // ============================================
+    // CHAT FEATURE - New Implementation
+    // ============================================
+
+    createChatOverlay() {
+      this.chatOverlay = document.createElement('div');
+      this.chatOverlay.id = 'wingman-chat-overlay';
+      this.chatOverlay.innerHTML = `
+        <div class="wingman-chat-panel">
+          <div class="wingman-chat-header">
+            <span class="wingman-logo">💬 Chat Wingman</span>
+            <button class="wingman-toggle" id="wingman-chat-minimize">−</button>
+          </div>
+          <div class="wingman-chat-content">
+            <div class="chat-match-info" id="chat-match-info">
+              <div class="match-avatar" id="match-avatar"></div>
+              <div class="match-details">
+                <span class="match-name" id="match-name">Select a chat</span>
+                <span class="match-status" id="match-status">Waiting...</span>
+              </div>
+            </div>
+            
+            <div class="chat-conversation-preview" id="chat-preview">
+              <p class="preview-placeholder">Open a conversation to get AI assistance</p>
+            </div>
+            
+            <div class="chat-suggestions" id="chat-suggestions">
+              <div class="suggestion-header">
+                <span>✨ AI Suggestions</span>
+                <button class="refresh-btn" id="refresh-suggestions" title="Get new suggestions">🔄</button>
+              </div>
+              <div class="suggestion-list" id="suggestion-list">
+                <!-- AI suggestions will appear here -->
+              </div>
+            </div>
+            
+            <div class="chat-actions">
+              <button class="wingman-btn opener" id="generate-opener">💫 Generate Opener</button>
+              <button class="wingman-btn reply" id="generate-reply">💭 Suggest Reply</button>
+            </div>
+            
+            <div class="chat-style-section" id="chat-style-section">
+              <div class="style-header">
+                <span>📝 Your Style</span>
+                <span class="style-status" id="style-status">Learning...</span>
+              </div>
+              <div class="style-info" id="style-info">
+                <p>Send messages to help AI learn your style</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(this.chatOverlay);
+      this.bindChatOverlayEvents();
+      
+      // Initially hidden
+      this.chatOverlay.style.display = 'none';
+    }
+
+    bindChatOverlayEvents() {
+      // Minimize toggle
+      document.getElementById('wingman-chat-minimize')?.addEventListener('click', () => {
+        this.chatOverlay.classList.toggle('minimized');
       });
 
-      const chatContainer = document.querySelector(SELECTORS.chatContainer);
-      if (chatContainer) {
-        chatObserver.observe(chatContainer, { childList: true, subtree: true });
+      // Generate opener button
+      document.getElementById('generate-opener')?.addEventListener('click', () => {
+        this.generateOpener();
+      });
+
+      // Generate reply button
+      document.getElementById('generate-reply')?.addEventListener('click', () => {
+        this.generateReply();
+      });
+
+      // Refresh suggestions
+      document.getElementById('refresh-suggestions')?.addEventListener('click', () => {
+        this.generateReply();
+      });
+    }
+
+    // Detect if we're in swipe view or chat view
+    detectCurrentView() {
+      const isInChat = this.isInChatView();
+      const newView = isInChat ? 'chat' : 'swipe';
+      
+      // Always update on first run or when view changes
+      if (newView !== this.currentView || !this.viewInitialized) {
+        console.log(`📍 View changed: ${this.currentView} → ${newView}`);
+        this.currentView = newView;
+        this.viewInitialized = true;
+        this.updateOverlayVisibility();
+        
+        if (isInChat) {
+          this.onEnterChat();
+        }
       }
     }
 
-    async onChatUpdate() {
-      const messages = Array.from(document.querySelectorAll(SELECTORS.messages));
-      const conversation = messages.map(m => m.textContent).join('\n');
+    isInChatView() {
+      const url = window.location.href;
       
+      // Simple URL-based detection:
+      // /app/connections = chat mode
+      // /app (without connections) = swipe mode
+      
+      if (url.includes('/app/connections')) {
+        console.log('💬 CHAT mode (URL: /app/connections)');
+        return true;
+      }
+      
+      console.log('💘 SWIPE mode (URL: /app)');
+      return false;
+    }
+
+    updateOverlayVisibility() {
+      console.log('📍 Updating overlay visibility. Current view:', this.currentView);
+      
+      if (this.currentView === 'chat') {
+        if (this.overlay) this.overlay.style.display = 'none';
+        if (this.chatOverlay) this.chatOverlay.style.display = 'block';
+        console.log('💬 Showing CHAT overlay');
+      } else {
+        if (this.overlay) this.overlay.style.display = 'block';
+        if (this.chatOverlay) this.chatOverlay.style.display = 'none';
+        console.log('💘 Showing SWIPE overlay');
+      }
+    }
+
+    observeViewChanges() {
+      let lastUrl = window.location.href;
+      
+      // Check URL every 500ms - simple and reliable for SPAs
+      setInterval(() => {
+        const currentUrl = window.location.href;
+        if (currentUrl !== lastUrl) {
+          console.log('🔗 URL changed:', currentUrl);
+          lastUrl = currentUrl;
+          this.detectCurrentView();
+        }
+      }, 500);
+
+      // Also listen for popstate (back/forward navigation)
+      window.addEventListener('popstate', () => {
+        console.log('⬅️ Popstate navigation');
+        setTimeout(() => this.detectCurrentView(), 100);
+      });
+    }
+
+    onEnterChat() {
+      console.log('💬 Entered chat view');
+      this.extractMatchInfo();
+      this.setupChatObserver();
+      this.loadConversation();
+      this.watchForConversationSwitch();
+      
+      // Notify background
+      chrome.runtime.sendMessage({
+        type: 'CHAT_OPENED',
+        payload: { match: this.currentChatMatch }
+      });
+    }
+
+    watchForConversationSwitch() {
+      // Watch for changes in the chat header (when user switches conversations)
+      if (this.conversationSwitchObserver) {
+        this.conversationSwitchObserver.disconnect();
+      }
+      if (this.conversationSwitchInterval) {
+        clearInterval(this.conversationSwitchInterval);
+      }
+
+      this.lastMatchName = this.currentChatMatch?.name || '';
+
+      // Check periodically if the match name changed
+      this.conversationSwitchInterval = setInterval(() => {
+        const nameEl = document.querySelector('.messages-header__name .header-2, .messages-header__name');
+        const currentName = nameEl?.textContent?.trim()?.split(',')[0] || '';
+        
+        if (currentName && currentName !== this.lastMatchName) {
+          console.log('🔄 Conversation switched:', this.lastMatchName, '→', currentName);
+          this.lastMatchName = currentName;
+          this.onConversationSwitch();
+        }
+      }, 500);
+
+      // Also use MutationObserver on the header area
+      const headerArea = document.querySelector('.messages-header, .page--chat');
+      if (headerArea) {
+        this.conversationSwitchObserver = new MutationObserver((mutations) => {
+          const nameEl = document.querySelector('.messages-header__name .header-2');
+          const currentName = nameEl?.textContent?.trim() || '';
+          
+          if (currentName && currentName !== this.lastMatchName) {
+            console.log('🔄 Conversation switched (observer):', this.lastMatchName, '→', currentName);
+            this.lastMatchName = currentName;
+            this.onConversationSwitch();
+          }
+        });
+
+        this.conversationSwitchObserver.observe(headerArea, {
+          childList: true,
+          subtree: true,
+          characterData: true
+        });
+      }
+    }
+
+    onConversationSwitch() {
+      console.log('💬 Switching conversation...');
+      
+      // STOP any ongoing generation
+      this.isGeneratingResponse = false;
+      this.switchingConversation = true; // Flag to prevent race conditions
+      
+      // IMPORTANT: Clear ALL old data immediately
+      this.conversationHistory = [];
+      this.lastMessageCount = 0;
+      this.currentChatMatch = null; // Clear old match!
+      
+      // Update UI to show loading
+      const previewEl = document.getElementById('chat-preview');
+      if (previewEl) {
+        previewEl.innerHTML = '<p class="preview-placeholder">Loading new conversation...</p>';
+      }
+      
+      // Clear old suggestions completely
+      const suggestionList = document.getElementById('suggestion-list');
+      if (suggestionList) {
+        suggestionList.innerHTML = '<div class="suggestion-loading"><span class="loading-spinner">⏳</span><span>Switching chat...</span></div>';
+      }
+      
+      // Clear match display
+      const nameEl = document.getElementById('match-name');
+      if (nameEl) nameEl.textContent = 'Loading...';
+
+      // Wait LONGER for Bumble to fully switch the conversation in DOM
+      setTimeout(() => {
+        console.log('💬 Extracting new conversation data...');
+        
+        // Now extract match info (should be new person)
+        this.extractMatchInfo();
+        
+        // Verify we got the right person before continuing
+        console.log('👤 New match detected:', this.currentChatMatch?.name);
+        
+        this.setupChatObserver();
+        
+        // Load conversation with retry logic
+        this.loadConversation();
+        
+        // Mark switching as complete
+        this.switchingConversation = false;
+
+        // Notify background
+        chrome.runtime.sendMessage({
+          type: 'CHAT_OPENED',
+          payload: { match: this.currentChatMatch }
+        });
+      }, 1200); // Wait 1.2 seconds for Bumble to fully update DOM
+    }
+
+    extractMatchInfo() {
+      // Get match name - using ACTUAL Bumble selectors
+      const nameSelectors = [
+        '.messages-header__name .header-2',
+        '.messages-header__name',
+        '[class*="header-2"]'
+      ];
+      
+      let matchName = 'Unknown';
+      for (const sel of nameSelectors) {
+        const el = document.querySelector(sel);
+        if (el && el.textContent.trim()) {
+          matchName = el.textContent.trim().split(',')[0];
+          console.log('✅ Found match name:', matchName, 'using selector:', sel);
+          break;
+        }
+      }
+
+      // Get match photo - using ACTUAL Bumble selectors
+      const photoSelectors = [
+        '.messages-header__avatar img',
+        '.messages-header img',
+        '.page--chat img[class*="avatar"]'
+      ];
+      
+      let matchPhoto = null;
+      for (const sel of photoSelectors) {
+        const el = document.querySelector(sel);
+        if (el && el.src && !el.src.includes('icon') && !el.src.includes('emoji')) {
+          matchPhoto = el.src;
+          console.log('✅ Found match photo:', sel);
+          break;
+        }
+      }
+
+      this.currentChatMatch = {
+        name: matchName,
+        photo: matchPhoto,
+        timestamp: Date.now()
+      };
+
+      // Update UI
+      const nameEl = document.getElementById('match-name');
+      const avatarEl = document.getElementById('match-avatar');
+      const statusEl = document.getElementById('match-status');
+      
+      if (nameEl) nameEl.textContent = matchName;
+      if (statusEl) statusEl.textContent = 'Ready to assist';
+      if (avatarEl && matchPhoto) {
+        avatarEl.innerHTML = `<img src="${matchPhoto}" alt="${matchName}">`;
+      } else if (avatarEl) {
+        avatarEl.innerHTML = `<span class="avatar-placeholder">${matchName.charAt(0)}</span>`;
+      }
+
+      console.log('👤 Match info:', this.currentChatMatch);
+    }
+
+    setupChatObserver() {
+      // Disconnect any existing observer
+      if (this.chatObserver) {
+        this.chatObserver.disconnect();
+      }
+
+      this.chatObserver = new MutationObserver((mutations) => {
+        this.onChatUpdate();
+      });
+
+      // Find the chat/message container
+      const chatContainerSelectors = [
+        '[class*="messenger-messages"]',
+        '[class*="chat-messages"]',
+        '[class*="conversation-messages"]',
+        '[class*="message-list"]',
+        SELECTORS.chatContainer
+      ];
+
+      for (const sel of chatContainerSelectors) {
+        const container = document.querySelector(sel);
+        if (container) {
+          this.chatObserver.observe(container, { 
+            childList: true, 
+            subtree: true,
+            characterData: true
+          });
+          console.log('👀 Watching chat container:', sel);
+          break;
+        }
+      }
+
+      // Also watch the input field for when user types
+      this.watchMessageInput();
+    }
+
+    watchMessageInput() {
+      const inputSelectors = [
+        '.message-field textarea',
+        'textarea[placeholder*="Start chatting"]',
+        'textarea[placeholder*="message"]',
+        'textarea[placeholder*="Message"]'
+      ];
+
+      for (const sel of inputSelectors) {
+        const input = document.querySelector(sel);
+        if (input) {
+          // Avoid duplicate listeners
+          if (input.dataset.wingmanWatching) return;
+          input.dataset.wingmanWatching = 'true';
+          
+          // Watch for sent messages (to learn style)
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              const message = input.value.trim();
+              if (message) {
+                this.onMessageSent(message);
+              }
+            }
+          });
+
+          // Also watch the send button
+          const sendBtn = document.querySelector('.message-field button, button[type="submit"]');
+          if (sendBtn && !sendBtn.dataset.wingmanWatching) {
+            sendBtn.dataset.wingmanWatching = 'true';
+            sendBtn.addEventListener('click', () => {
+              const message = input.value.trim();
+              if (message) {
+                this.onMessageSent(message);
+              }
+            });
+          }
+
+          console.log('⌨️ Watching input field:', sel);
+          break;
+        }
+      }
+    }
+
+    onMessageSent(message) {
+      console.log('📤 You sent:', message);
+      
+      // Learn from user's message (for style)
+      chrome.runtime.sendMessage({
+        type: 'LEARN_CHAT_STYLE',
+        payload: { message, timestamp: Date.now() }
+      });
+
+      // Add to conversation history
+      this.conversationHistory.push({
+        sender: 'me',
+        text: message,
+        timestamp: Date.now()
+      });
+
+      // Update UI
+      this.updateConversationPreview();
+      this.updateStyleStatus();
+      this.updateSuggestionContext();
+      
+      // Auto-generate follow-up suggestion after sending
+      console.log('🤖 Auto-generating follow-up after your message...');
+      setTimeout(() => {
+        this.generateReply(); // This will detect it's a follow-up since you sent last
+      }, 1000); // Wait 1 second before suggesting follow-up
+    }
+
+    onChatUpdate() {
+      const messages = this.extractMessages();
+      
+      // Check if new messages arrived
+      if (messages.length > this.lastMessageCount) {
+        const newMessages = messages.slice(this.lastMessageCount);
+        console.log('📩 New messages:', newMessages.length);
+        
+        // Check if the last message is from them (needs reply)
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg && lastMsg.sender === 'them') {
+          this.onNewMessageFromMatch(lastMsg);
+        }
+        
+        this.lastMessageCount = messages.length;
+        this.conversationHistory = messages;
+        this.updateConversationPreview();
+      }
+    }
+
+    extractMessages() {
+      const messages = [];
+      
+      // Try to find all message elements using ACTUAL Bumble selectors
+      const messageSelectors = [
+        '.message',
+        '[class*="message-bubble"]',
+        '.messages-list [class*="message"]'
+      ];
+
+      let messageElements = [];
+      for (const sel of messageSelectors) {
+        messageElements = document.querySelectorAll(sel);
+        if (messageElements.length > 0) {
+          console.log('✅ Found messages with selector:', sel, 'count:', messageElements.length);
+          break;
+        }
+      }
+
+      messageElements.forEach(el => {
+        // Find the actual text content
+        const textEl = el.querySelector('.message__text, .message-text, [class*="text"]') || el;
+        const text = textEl.textContent?.trim();
+        if (!text || text.length < 1) return;
+        
+        // Skip if it's a timestamp or system message
+        if (text.includes('hour') && text.includes('ago')) return;
+        if (text.includes('Conversation expires')) return;
+        if (text.includes('hours left to start')) return;
+        if (text.includes('before they disa')) return;
+        if (text.includes('You matched')) return;
+        if (text.includes('Start a chat')) return;
+        if (text.includes('Introduce yourself')) return;
+        if (text.includes('Make a move')) return;
+        if (text.includes('only have') && text.includes('hours')) return;
+        if (text.includes('respond before')) return;
+        if (text.length < 3) return; // Skip very short text
+
+        // Determine if it's from me or them based on class names
+        // Check the element itself AND its parent containers
+        let checkEl = el;
+        let isFromMe = false;
+        
+        // Walk up the DOM to find sender indicators
+        while (checkEl && checkEl !== document.body) {
+          const classes = checkEl.className || '';
+          
+          // Bumble uses different class patterns for sent vs received
+          // "out" or "from-me" = I sent it
+          // "in" or "from-them" = They sent it
+          if (classes.includes('--out') || classes.includes('from-me') || classes.includes('is-outgoing')) {
+            isFromMe = true;
+            break;
+          }
+          if (classes.includes('--in') || classes.includes('from-them') || classes.includes('is-incoming')) {
+            isFromMe = false;
+            break;
+          }
+          
+          checkEl = checkEl.parentElement;
+        }
+        
+        // Also check by position - messages on right are usually "me"
+        if (!isFromMe) {
+          const rect = el.getBoundingClientRect();
+          const parentRect = el.closest('.messages-list')?.getBoundingClientRect();
+          if (parentRect) {
+            const centerX = rect.left + rect.width / 2;
+            const parentCenterX = parentRect.left + parentRect.width / 2;
+            // If message is more to the right, it's likely from me
+            if (centerX > parentCenterX + 50) {
+              isFromMe = true;
+            }
+          }
+        }
+
+        console.log(`📝 Message: "${text.substring(0, 30)}..." - From: ${isFromMe ? 'ME' : 'THEM'}`);
+
+        messages.push({
+          sender: isFromMe ? 'me' : 'them',
+          text: text.substring(0, 500),
+          timestamp: Date.now()
+        });
+      });
+
+      console.log('📨 Extracted messages:', messages.length);
+      return messages;
+    }
+
+    onNewMessageFromMatch(message) {
+      console.log(`💌 ${this.currentChatMatch?.name || 'Match'} says:`, message.text);
+      
+      // Update status
+      const statusEl = document.getElementById('match-status');
+      if (statusEl) statusEl.textContent = '💬 New message! Generating reply...';
+
+      // Update conversation preview
+      this.updateConversationPreview();
+
+      // AUTO-GENERATE reply when receiving a new message (always, not just when chat assist is on)
+      console.log('🤖 Auto-generating reply to new message...');
+      this.generateReply();
+
+      // Notify background
       chrome.runtime.sendMessage({
         type: 'MESSAGE_RECEIVED',
-        payload: { conversation }
+        payload: {
+          match: this.currentChatMatch,
+          message: message,
+          conversation: this.conversationHistory
+        }
       });
+    }
+
+    updateConversationPreview() {
+      const previewEl = document.getElementById('chat-preview');
+      if (!previewEl) return;
+
+      const recentMessages = this.conversationHistory.slice(-5);
+      
+      if (recentMessages.length === 0) {
+        previewEl.innerHTML = '<p class="preview-placeholder">No messages yet - start the conversation!</p>';
+        return;
+      }
+
+      const html = recentMessages.map(msg => `
+        <div class="preview-message ${msg.sender === 'me' ? 'from-me' : 'from-them'}">
+          <span class="msg-sender">${msg.sender === 'me' ? 'You' : this.currentChatMatch?.name || 'Them'}:</span>
+          <span class="msg-text">${msg.text.substring(0, 60)}${msg.text.length > 60 ? '...' : ''}</span>
+        </div>
+      `).join('');
+
+      previewEl.innerHTML = html;
+    }
+
+    async generateOpener() {
+      if (this.isGeneratingResponse) return;
+      
+      this.isGeneratingResponse = true;
+      this.updateSuggestionUI('loading', 'Crafting the perfect opener...');
+
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'GENERATE_RESPONSE',
+          payload: {
+            isOpener: true,
+            match: this.currentChatMatch,
+            conversation: []
+          }
+        });
+
+        if (response?.success && response?.response) {
+          this.displaySuggestions([response.response], 'opener');
+        } else {
+          this.updateSuggestionUI('error', response?.error || 'Failed to generate opener');
+        }
+      } catch (error) {
+        console.error('Opener generation error:', error);
+        this.updateSuggestionUI('error', 'Failed to connect to AI');
+      }
+
+      this.isGeneratingResponse = false;
+    }
+
+    async generateReply() {
+      if (this.isGeneratingResponse) return;
+      
+      this.isGeneratingResponse = true;
+      
+      // Determine context - who sent the last message?
+      const lastMsg = this.conversationHistory[this.conversationHistory.length - 1];
+      const isFollowUp = lastMsg?.sender === 'me';
+      
+      const loadingText = isFollowUp 
+        ? 'Thinking of a follow-up...' 
+        : 'Crafting the perfect reply...';
+      
+      this.updateSuggestionUI('loading', loadingText);
+
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'GENERATE_RESPONSE',
+          payload: {
+            isOpener: false,
+            isFollowUp: isFollowUp, // NEW: Tell AI if this is a follow-up
+            match: this.currentChatMatch,
+            conversation: this.conversationHistory,
+            lastMessageFrom: lastMsg?.sender || 'them'
+          }
+        });
+
+        if (response?.success && response?.response) {
+          const label = isFollowUp ? 'follow-up' : 'reply';
+          this.displaySuggestions([response.response], label);
+        } else {
+          this.updateSuggestionUI('error', response?.error || 'Failed to generate');
+        }
+      } catch (error) {
+        console.error('Reply generation error:', error);
+        this.updateSuggestionUI('error', 'Failed to connect to AI');
+      }
+
+      this.isGeneratingResponse = false;
+    }
+
+    updateSuggestionUI(state, message) {
+      const listEl = document.getElementById('suggestion-list');
+      if (!listEl) return;
+
+      if (state === 'loading') {
+        listEl.innerHTML = `
+          <div class="suggestion-loading">
+            <span class="loading-spinner">⏳</span>
+            <span>${message}</span>
+          </div>
+        `;
+      } else if (state === 'error') {
+        listEl.innerHTML = `
+          <div class="suggestion-error">
+            <span>❌</span>
+            <span>${message}</span>
+          </div>
+        `;
+      }
+    }
+
+    displaySuggestions(suggestions, type) {
+      const listEl = document.getElementById('suggestion-list');
+      if (!listEl) return;
+
+      const html = suggestions.map((suggestion, index) => `
+        <div class="suggestion-item" data-index="${index}">
+          <p class="suggestion-text">${suggestion}</p>
+          <div class="suggestion-actions">
+            <button class="copy-btn" data-text="${suggestion.replace(/"/g, '&quot;')}" title="Copy to clipboard">📋 Copy</button>
+            <button class="use-btn" data-text="${suggestion.replace(/"/g, '&quot;')}" title="Paste into input">✍️ Use</button>
+          </div>
+        </div>
+      `).join('');
+
+      listEl.innerHTML = html;
+
+      // Bind click handlers
+      listEl.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const text = btn.dataset.text;
+          console.log('📋 Copy clicked, text:', text.substring(0, 50) + '...');
+          navigator.clipboard.writeText(text).then(() => {
+            btn.textContent = '✅ Copied!';
+            setTimeout(() => btn.textContent = '📋 Copy', 2000);
+          }).catch(err => {
+            console.error('❌ Copy failed:', err);
+            // Fallback: create temp textarea
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            btn.textContent = '✅ Copied!';
+            setTimeout(() => btn.textContent = '📋 Copy', 2000);
+          });
+        });
+      });
+
+      listEl.querySelectorAll('.use-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const text = btn.dataset.text;
+          console.log('✍️ Use clicked, text:', text.substring(0, 50) + '...');
+          this.pasteIntoInput(text);
+        });
+      });
+    }
+
+    pasteIntoInput(text) {
+      // Find the message input - EXACT Bumble selectors from DOM inspection
+      const inputSelectors = [
+        'textarea.textarea__input',           // Primary - exact class from Bumble
+        '.chat-input textarea',               // Backup
+        '.message-field_input textarea',      // Backup
+        'textarea[placeholder*="Start chatting"]',
+      ];
+
+      let input = null;
+      for (const sel of inputSelectors) {
+        input = document.querySelector(sel);
+        if (input) {
+          console.log('📝 Found input with selector:', sel);
+          break;
+        }
+      }
+
+      if (!input) {
+        console.error('❌ Could not find message input');
+        alert('Could not find the message input. Please click on the text box first and try again.');
+        return;
+      }
+
+      // This function sets value in a way React can detect
+      this.setReactInputValue(input, text);
+
+      // Visual feedback
+      const useBtn = document.querySelector('.use-btn');
+      if (useBtn) {
+        useBtn.textContent = '✅ Pasted!';
+        setTimeout(() => useBtn.textContent = '✍️ Use', 2000);
+      }
+    }
+
+    setReactInputValue(input, value) {
+      // Focus the input first
+      input.focus();
+      
+      // Send message to background script to execute paste in MAIN world
+      // This bypasses CSP restrictions
+      chrome.runtime.sendMessage({
+        type: 'PASTE_TEXT',
+        text: value
+      }, (response) => {
+        if (response?.success) {
+          console.log('✍️ Pasted suggestion via background script');
+        } else {
+          console.error('❌ Paste failed:', response?.error);
+        }
+      });
+    }
+
+    updateStyleStatus() {
+      chrome.runtime.sendMessage({ type: 'GET_CHAT_STYLE' }, (response) => {
+        const styleSection = document.getElementById('chat-style-section');
+        const styleInfo = document.getElementById('style-info');
+        const styleStatus = document.getElementById('style-status');
+        
+        if (response?.chatStyle) {
+          const style = response.chatStyle;
+          const sampleCount = style.samples?.length || 0;
+          
+          if (styleStatus) {
+            if (sampleCount >= 10) {
+              styleStatus.textContent = '✅ Active';
+              styleStatus.style.color = '#22c55e';
+            } else {
+              styleStatus.textContent = 'Learning...';
+              styleStatus.style.color = '#f59e0b';
+            }
+          }
+          
+          if (styleInfo) {
+            if (sampleCount >= 5) {
+              styleInfo.innerHTML = `
+                <p>Tone: <strong>${style.tone || 'casual'}</strong> • Emojis: <strong>${style.emojiUsage || 'moderate'}</strong></p>
+              `;
+            } else {
+              styleInfo.innerHTML = `<p>Send ${10 - sampleCount} more messages to learn your style</p>`;
+            }
+          }
+        }
+      });
+    }
+
+    loadConversation() {
+      // Wait for Bumble to fully load the new conversation
+      // Use multiple attempts to ensure we get the right messages
+      let attempts = 0;
+      const maxAttempts = 5;
+      
+      const tryLoadMessages = () => {
+        attempts++;
+        console.log(`📚 Loading conversation attempt ${attempts}/${maxAttempts}...`);
+        
+        const messages = this.extractMessages();
+        
+        // Check if messages seem valid for this conversation
+        // If we got messages, or we've tried enough times, proceed
+        if (messages.length > 0 || attempts >= maxAttempts) {
+          this.conversationHistory = messages;
+          this.lastMessageCount = messages.length;
+          this.updateConversationPreview();
+          this.updateStyleStatus();
+          
+          console.log(`📚 Loaded ${messages.length} messages after ${attempts} attempts`);
+          
+          // Update UI based on who sent last message
+          this.updateSuggestionContext();
+          
+          // AUTO-GENERATE suggestion when conversation loads
+          setTimeout(() => {
+            this.autoGenerateSuggestion();
+          }, 300); // Small extra delay before generating
+        } else {
+          // No messages yet, try again
+          setTimeout(tryLoadMessages, 500);
+        }
+      };
+      
+      // Start trying after initial delay for DOM to update
+      setTimeout(tryLoadMessages, 1000);
+    }
+
+    autoGenerateSuggestion() {
+      // Don't auto-generate if already generating or switching conversations
+      if (this.isGeneratingResponse) {
+        console.log('⏳ Already generating, skipping...');
+        return;
+      }
+      if (this.switchingConversation) {
+        console.log('⏳ Still switching conversation, skipping...');
+        return;
+      }
+      if (!this.currentChatMatch?.name) {
+        console.log('⏳ No match info yet, skipping...');
+        return;
+      }
+      
+      // Filter out any remaining system messages
+      const realMessages = this.conversationHistory.filter(msg => {
+        const text = msg.text.toLowerCase();
+        if (text.includes('hours left')) return false;
+        if (text.includes('introduce yourself')) return false;
+        if (text.includes('start a chat')) return false;
+        if (text.includes('make a move')) return false;
+        if (text.includes('matched')) return false;
+        return true;
+      });
+      
+      const hasMessages = realMessages.length > 0;
+      const lastMsg = realMessages[realMessages.length - 1];
+      
+      console.log(`📊 Generating for: ${this.currentChatMatch.name} | Real messages: ${realMessages.length}, Last from: ${lastMsg?.sender || 'none'}`);
+      
+      if (!hasMessages) {
+        // No real messages - generate opener
+        console.log(`🤖 Auto-generating OPENER for ${this.currentChatMatch.name}...`);
+        this.generateOpener();
+      } else if (lastMsg?.sender === 'them') {
+        // They sent last message - generate reply
+        console.log(`🤖 Auto-generating REPLY for ${this.currentChatMatch.name}...`);
+        this.generateReply();
+      } else {
+        // I sent last message - generate follow-up
+        console.log(`🤖 Auto-generating FOLLOW-UP for ${this.currentChatMatch.name}...`);
+        this.generateReply();
+      }
+    }
+
+    updateSuggestionContext() {
+      const statusEl = document.getElementById('match-status');
+      const lastMsg = this.conversationHistory[this.conversationHistory.length - 1];
+      
+      if (!lastMsg) {
+        if (statusEl) statusEl.textContent = 'No messages yet - send an opener!';
+        return;
+      }
+      
+      if (lastMsg.sender === 'me') {
+        // I sent the last message - waiting for their reply or need a follow-up
+        if (statusEl) statusEl.textContent = 'Your turn sent - need a follow-up?';
+      } else {
+        // They sent the last message - I need to reply
+        if (statusEl) statusEl.textContent = 'They replied - your turn!';
+      }
     }
   }
 
